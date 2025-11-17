@@ -1,0 +1,131 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+  // PERBAIKAN: Menambahkan referentialIntegrity untuk mengatasi masalah Foreign Key Constraint
+  referentialIntegrity = "prisma" 
+}
+
+model User {
+  user_id         Int                     @id @default(autoincrement())
+  username        String                  @unique @db.VarChar(50)
+  password        String                  @db.VarChar(255)
+  email           String                  @unique @db.VarChar(100)
+  role            String                  @default("Karyawan") @db.VarChar(20)
+  status_karyawan String                  @default("Magang") @db.VarChar(20)
+  created_at      DateTime                @default(now())
+  employee        Employee?
+  reset_tokens    password_reset_tokens[] 
+
+  @@map("users")
+}
+
+model Employee {
+  employee_id     Int            @id @default(autoincrement())
+  user_id         Int?           @unique
+  nama_lengkap    String         @db.VarChar(100)
+  alamat          String?        @db.Text
+  no_hp           String?        @db.VarChar(20)
+  jabatan         String?        @db.VarChar(50)
+  tanggal_masuk   DateTime?
+  status_karyawan String         @default("Tetap") @db.VarChar(20)
+  gaji_pokok      Decimal        @default(5000000.00) @db.Decimal(15, 2)
+  created_at      DateTime       @default(now())
+  attendance      Attendance[]
+  user            User?          @relation(fields: [user_id], references: [user_id])
+  leave_requests  LeaveRequest[]
+  payroll         Payroll[]
+  performance     Performance[]
+
+  @@map("employees")
+}
+
+model Attendance {
+  attendance_id    Int      @id @default(autoincrement())
+  employee_id      Int
+  tanggal          DateTime
+  jam_masuk        String?  @db.VarChar(10)
+  jam_pulang       String?  @db.VarChar(10)
+  status           String   @default("hadir") @db.VarChar(20)
+  tipe_kerja       String   @default("WFO") @db.VarChar(20)
+  lokasi_masuk     String?  @db.VarChar(100)
+  lokasi_pulang    String?  @db.VarChar(100)
+  akurasi_masuk    Int?
+  akurasi_pulang   Int?
+  recorded_by_role String?  @db.VarChar(20)
+  status_approval  String   @default("approved") @db.VarChar(20)
+  created_at       DateTime @default(now())
+  employee         Employee @relation(fields: [employee_id], references: [employee_id], onDelete: Cascade)
+
+  @@index([employee_id])
+  @@index([tanggal])
+  @@map("attendance")
+}
+
+model LeaveRequest {
+  leave_id          Int      @id @default(autoincrement())
+  employee_id       Int
+  tanggal_pengajuan DateTime
+  tanggal_mulai     DateTime
+  tanggal_selesai   DateTime
+  jenis_pengajuan   String   @default("Cuti") @db.VarChar(20)
+  alasan            String   @db.Text
+  status            String   @default("pending") @db.VarChar(20)
+  created_at        DateTime @default(now())
+  employee          Employee @relation(fields: [employee_id], references: [employee_id], onDelete: Cascade)
+
+  @@index([employee_id])
+  @@index([status])
+  @@map("leave_requests")
+}
+
+model Payroll {
+  payroll_id      Int      @id @default(autoincrement())
+  employee_id     Int
+  periode         String   @db.VarChar(10)
+  gaji_pokok      Decimal  @db.Decimal(15, 2)
+  tunjangan       Decimal  @default(0.00) @db.Decimal(15, 2)
+  potongan        Decimal  @default(0.00) @db.Decimal(15, 2)
+  alasan_potongan String?  @db.Text
+  total_gaji      Decimal  @db.Decimal(15, 2)
+  employee_role   String?  @db.VarChar(50)
+  created_at      DateTime @default(now())
+  employee        Employee @relation(fields: [employee_id], references: [employee_id], onDelete: Cascade)
+
+  @@unique([employee_id, periode])
+  @@index([employee_id])
+  @@map("payroll")
+}
+
+model Performance {
+  performance_id Int      @id @default(autoincrement())
+  employee_id    Int
+  periode        String   @db.VarChar(20)
+  nilai_kinerja  Int      @default(0)
+  catatan        String?  @db.Text
+  created_at     DateTime @default(now())
+  employee       Employee @relation(fields: [employee_id], references: [employee_id], onDelete: Cascade)
+
+  @@index([employee_id])
+  @@map("performance")
+}
+
+model password_reset_tokens {
+  id         Int      @id @default(autoincrement())
+  user_id    Int
+  token      String   @unique @db.VarChar(191)
+  expires_at DateTime @db.DateTime(3)
+  created_at DateTime @default(now()) @db.DateTime(3)
+
+  // Relasi ke model User dengan onDelete Cascade
+  user User @relation(fields: [user_id], references: [user_id], onDelete: Cascade) 
+
+  // Index untuk optimasi query
+  @@index([user_id])
+  @@index([token])
+  @@index([expires_at])
+  @@map("password_reset_tokens")
+}

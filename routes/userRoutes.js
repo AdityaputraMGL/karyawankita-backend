@@ -26,12 +26,14 @@ emailTransporter.verify(function (error, success) {
     console.log("✅ Email server is ready to send messages");
   }
 });
+
 module.exports = function (prisma) {
   const router = express.Router();
 
-  // ✅ POST: Register user
+  // ✅ POST: Register user - UPDATED
   router.post("/register", async (req, res) => {
-    const { username, password, email, role, nama_lengkap } = req.body;
+    const { username, password, email, role, status_karyawan, nama_lengkap } =
+      req.body;
 
     try {
       // Validasi input
@@ -52,8 +54,30 @@ module.exports = function (prisma) {
         });
       }
 
+      // Cek apakah email sudah ada
+      const existingEmail = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      if (existingEmail) {
+        return res.status(400).json({
+          error: "Email sudah terdaftar.",
+        });
+      }
+
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Tentukan status karyawan
+      const finalStatusKaryawan = status_karyawan || "Magang";
+
+      // Tentukan gaji pokok berdasarkan status
+      const gajiPokok =
+        finalStatusKaryawan === "Magang"
+          ? 5000000.0
+          : finalStatusKaryawan === "Kontrak"
+          ? 5000000.0
+          : 5000000.0;
 
       // Create user
       const newUser = await prisma.user.create({
@@ -62,19 +86,34 @@ module.exports = function (prisma) {
           password: hashedPassword,
           email,
           role: role || "Karyawan",
+          status_karyawan: finalStatusKaryawan,
         },
       });
 
-      // Create employee record jika ada nama_lengkap
-      let employee = null;
-      if (nama_lengkap) {
-        employee = await prisma.employee.create({
-          data: {
-            user_id: newUser.user_id,
-            nama_lengkap,
-          },
-        });
-      }
+      console.log("✅ User created:", {
+        user_id: newUser.user_id,
+        username: newUser.username,
+        role: newUser.role,
+        status_karyawan: newUser.status_karyawan,
+      });
+
+      // ⭐ SELALU create employee record (PENTING!)
+      const employee = await prisma.employee.create({
+        data: {
+          user_id: newUser.user_id,
+          nama_lengkap: nama_lengkap || username, // Gunakan username jika nama_lengkap kosong
+          status_karyawan: finalStatusKaryawan,
+          gaji_pokok: gajiPokok,
+        },
+      });
+
+      console.log("✅ Employee created:", {
+        employee_id: employee.employee_id,
+        user_id: employee.user_id,
+        nama_lengkap: employee.nama_lengkap,
+        status_karyawan: employee.status_karyawan,
+        gaji_pokok: employee.gaji_pokok,
+      });
 
       // Generate token
       const token = jwt.sign(
@@ -82,13 +121,15 @@ module.exports = function (prisma) {
           userId: newUser.user_id,
           username: newUser.username,
           role: newUser.role,
-          employee_id: employee ? employee.employee_id : null, // ⭐ INTEGER
+          employee_id: employee.employee_id, // ⭐ Sekarang PASTI ada
         },
         JWT_SECRET,
         { expiresIn: "24h" }
       );
 
-      console.log("✅ User registered:", username);
+      console.log("✅ Registration successful for:", username);
+      console.log("  - User ID:", newUser.user_id);
+      console.log("  - Employee ID:", employee.employee_id);
 
       res.status(201).json({
         token,
@@ -97,7 +138,9 @@ module.exports = function (prisma) {
           username: newUser.username,
           email: newUser.email,
           role: newUser.role,
-          employee_id: employee ? employee.employee_id : null,
+          employee_id: employee.employee_id,
+          nama_lengkap: employee.nama_lengkap,
+          status_karyawan: employee.status_karyawan,
         },
       });
     } catch (error) {
@@ -148,8 +191,24 @@ module.exports = function (prisma) {
         });
       }
 
-      // ⭐ PENTING: Pastikan employee_id adalah INTEGER
-      const employeeId = user.employee?.employee_id || null;
+      // ⭐ PENTING: Jika user tidak punya employee record, buat sekarang
+      let employeeId = user.employee?.employee_id || null;
+
+      if (!employeeId) {
+        console.log("⚠ User doesn't have employee record, creating one...");
+
+        const newEmployee = await prisma.employee.create({
+          data: {
+            user_id: user.user_id,
+            nama_lengkap: user.username,
+            status_karyawan: user.status_karyawan || "Magang",
+            gaji_pokok: 5000000.0,
+          },
+        });
+
+        employeeId = newEmployee.employee_id;
+        console.log("✅ Employee record created:", employeeId);
+      }
 
       console.log("✅ Login successful");
       console.log("  - User ID:", user.user_id);
@@ -184,8 +243,8 @@ module.exports = function (prisma) {
           username: user.username,
           email: user.email,
           role: user.role,
-          employee_id: employeeId, // ⭐ INTEGER or null
-          nama_lengkap: user.employee?.nama_lengkap || null,
+          employee_id: employeeId, // ⭐ INTEGER
+          nama_lengkap: user.employee?.nama_lengkap || user.username,
         },
       });
     } catch (error) {

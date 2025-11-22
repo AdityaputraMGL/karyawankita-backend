@@ -10,7 +10,7 @@ module.exports = function (prisma) {
   router.get(
     "/",
     auth.authenticateToken,
-    auth.authorizeRole(["Admin", "HR"]),
+    auth.authorizeRole(["Admin", "HR", "Karyawan"]),
     async (req, res) => {
       try {
         // ✅ FIXED: employee (singular) bukan employees

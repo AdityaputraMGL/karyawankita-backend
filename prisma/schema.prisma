@@ -5,8 +5,8 @@ generator client {
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
-  // PERBAIKAN: Menambahkan referentialIntegrity untuk mengatasi masalah Foreign Key Constraint
-  referentialIntegrity = "prisma" 
+  // ✅ FIXED: Ganti referentialIntegrity dengan relationMode
+  relationMode = "prisma"
 }
 
 model User {
@@ -18,7 +18,10 @@ model User {
   status_karyawan String                  @default("Magang") @db.VarChar(20)
   created_at      DateTime                @default(now())
   employee        Employee?
-  reset_tokens    password_reset_tokens[] 
+  reset_tokens    password_reset_tokens[]
+  
+  // ⭐ APPROVAL RELATION
+  approvedAttendances Attendance[]        @relation("AttendanceApprovals")
 
   @@map("users")
 }
@@ -57,11 +60,24 @@ model Attendance {
   akurasi_pulang   Int?
   recorded_by_role String?  @db.VarChar(20)
   status_approval  String   @default("approved") @db.VarChar(20)
+  
+  // ⭐ APPROVAL FIELDS
+  approval_status  String?  @default("approved") @db.VarChar(20)
+  approved_by      Int?
+  approval_notes   String?  @db.Text
+  approval_date    DateTime?
+  
   created_at       DateTime @default(now())
+  
+  // RELATIONS
   employee         Employee @relation(fields: [employee_id], references: [employee_id], onDelete: Cascade)
+  
+  // ⭐ APPROVAL RELATION (HARUS ADA INI!)
+  approver         User?    @relation("AttendanceApprovals", fields: [approved_by], references: [user_id], onDelete: SetNull)
 
   @@index([employee_id])
   @@index([tanggal])
+  @@index([approval_status])
   @@map("attendance")
 }
 

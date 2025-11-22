@@ -4,38 +4,106 @@ const { authenticateToken, authorizeRole } = require("../middleware/auth");
 module.exports = function (prisma) {
   const router = express.Router();
 
-  // Middleware untuk semua endpoint performance (Hanya Admin/HR yang boleh mengelola)
-  router.use(authenticateToken, authorizeRole(["Admin", "HR"]));
+  // Middleware untuk semua endpoint performance
+  router.use(authenticateToken, authorizeRole(["Admin", "HR", "Karyawan"]));
 
-  // ⭐ GET semua data performance
+  // ⭐ GET data performance dengan filter berdasarkan role
   router.get("/", async (req, res) => {
     try {
-      const performanceList = await prisma.performance.findMany({
-        orderBy: { periode: "desc" },
-        include: {
-          employee: { select: { nama_lengkap: true, jabatan: true } },
-        },
-      });
+      const userRole = req.user.role;
+      const userEmployeeId = req.user.employee_id;
+
+      console.log("📊 Fetching performance data:");
+      console.log("  - User role:", userRole);
+      console.log("  - User employee_id:", userEmployeeId);
+
+      let performanceList;
+
+      // Jika Admin atau HR, tampilkan semua data
+      if (userRole === "Admin" || userRole === "HR") {
+        performanceList = await prisma.performance.findMany({
+          orderBy: { periode: "desc" },
+          include: {
+            employee: {
+              select: {
+                nama_lengkap: true,
+                jabatan: true,
+                user: {
+                  select: {
+                    role: true, // ⭐ Ambil role dari tabel User, bukan dari performance
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+      // Jika Karyawan, hanya tampilkan data milik mereka
+      else if (userRole === "Karyawan") {
+        performanceList = await prisma.performance.findMany({
+          where: { employee_id: userEmployeeId },
+          orderBy: { periode: "desc" },
+          include: {
+            employee: {
+              select: {
+                nama_lengkap: true,
+                jabatan: true,
+                user: {
+                  select: {
+                    role: true, // ⭐ Ambil role dari tabel User
+                  },
+                },
+              },
+            },
+          },
+        });
+      } else {
+        return res.status(403).json({ error: "Role tidak dikenali." });
+      }
+
+      console.log("  ✅ Found", performanceList.length, "records");
       res.json(performanceList);
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ error: "Gagal mengambil data kinerja." });
+      console.error("❌ Error fetching performance:", error);
+      res.status(500).json({
+        error: "Gagal mengambil data kinerja.",
+        details: error.message,
+      });
     }
   });
 
-  // ⭐ POST: Membuat data performance baru
+  // ⭐ POST: Membuat data performance baru (dengan role)
   router.post("/", async (req, res) => {
     const { employee_id, periode, nilai_kinerja, catatan } = req.body;
 
     try {
+      // ⭐ Ambil role dari tabel User berdasarkan employee_id
+      const employee = await prisma.employee.findUnique({
+        where: { employee_id: parseInt(employee_id) },
+        include: {
+          user: {
+            select: { role: true },
+          },
+        },
+      });
+
+      if (!employee) {
+        return res.status(404).json({ error: "Karyawan tidak ditemukan." });
+      }
+
+      const employeeRole = employee.user?.role || "Karyawan";
+
+      // ⭐ Simpan data performance dengan role
       const newPerformance = await prisma.performance.create({
         data: {
           employee_id: parseInt(employee_id),
           periode,
           nilai_kinerja: parseInt(nilai_kinerja),
           catatan,
+          role: employeeRole, // ⭐ SIMPAN ROLE dari tabel User
         },
       });
+
       res.status(201).json(newPerformance);
     } catch (error) {
       console.error(error);
@@ -43,7 +111,7 @@ module.exports = function (prisma) {
     }
   });
 
-  // ⭐ PUT: Memperbarui data performance
+  // PUT: Memperbarui data performance
   router.put("/:id", async (req, res) => {
     const { id } = req.params;
     const { periode, nilai_kinerja, catatan } = req.body;
@@ -66,7 +134,7 @@ module.exports = function (prisma) {
     }
   });
 
-  // ⭐ DELETE: Menghapus data performance
+  // DELETE: Menghapus data performance
   router.delete("/:id", async (req, res) => {
     const { id } = req.params;
     try {

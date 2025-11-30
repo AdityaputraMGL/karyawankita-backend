@@ -2,10 +2,12 @@ const express = require("express");
 require("dotenv").config();
 const { PrismaClient } = require("@prisma/client");
 const cors = require("cors");
-
+const session = require("express-session");
 // Inisialisasi Prisma Client
 const prisma = new PrismaClient();
 
+const passportConfig = require("./middleware/passport");
+const passport = passportConfig(prisma);
 const AlphaCheckService = require("./services/alphaCheckService");
 const alphaCheckService = new AlphaCheckService(prisma);
 alphaCheckService.setupCronJob();
@@ -58,6 +60,21 @@ app.use(cors(corsOptions));
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
+// ✅ TAMBAHKAN: Session & Passport middleware
+app.use(
+  session({
+    secret: process.env.JWT_SECRET || "ganti_dengan_secret_key_yang_kuat",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    },
+  })
+);
+app.use(passport.initialize());
+app.use(passport.session());
+
 // Request logging middleware
 app.use((req, res, next) => {
   const timestamp = new Date().toISOString();
@@ -101,6 +118,7 @@ const performanceRoutes = require("./routes/performanceRoutes");
 const statsRoutes = require("./routes/statsRoutes");
 const passwordResetRoutes = require("./routes/passwordResetRoutes");
 const alphaRoutes = require("./routes/alphaRoutes");
+const googleAuthRoutes = require("./routes/googleAuthRoutes");
 
 // ✅ Use Routes
 app.use("/api/employees", employeeRoutes(prisma));
@@ -112,6 +130,7 @@ app.use("/api/performance", performanceRoutes(prisma));
 app.use("/api/stats", statsRoutes(prisma));
 app.use("/api/auth", passwordResetRoutes);
 app.use("/api/alpha", alphaRoutes(prisma, alphaCheckService));
+app.use("/api/auth", googleAuthRoutes(prisma, passport));
 
 // Error handling middleware
 app.use((err, req, res, next) => {

@@ -1,6 +1,5 @@
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
-const bcrypt = require("bcryptjs");
 
 module.exports = function (prisma) {
   passport.use(
@@ -8,7 +7,7 @@ module.exports = function (prisma) {
       {
         clientID: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        callbackURL: process.env.GOOGLE_CALLBACK_URL,
+        callbackURL: "http://localhost:5000/api/auth/google/callback",
       },
       async (accessToken, refreshToken, profile, done) => {
         try {
@@ -31,21 +30,18 @@ module.exports = function (prisma) {
           }
 
           // Buat user baru
-          console.log("📝 Creating new user from Google account");
+          console.log("🆕 Creating new user from Google account");
 
           // Generate username dari email
           const username =
             email.split("@")[0] + "_" + Math.floor(Math.random() * 1000);
 
-          // Generate random password (user tidak akan tahu, harus reset jika mau login manual)
-          const randomPassword = Math.random().toString(36).slice(-12);
-          const hashedPassword = await bcrypt.hash(randomPassword, 10);
-
+          // ✅ PERBAIKAN: SET PASSWORD KOSONG - USER AKAN SET DI COMPLETE PROFILE
           user = await prisma.user.create({
             data: {
               username,
               email,
-              password: hashedPassword,
+              password: "", // ⚠️ Empty string = belum set password
               role: "Karyawan",
               status_karyawan: "Magang",
             },
@@ -56,14 +52,20 @@ module.exports = function (prisma) {
             data: {
               user_id: user.user_id,
               nama_lengkap: displayName,
-              status_karyawan: "Magang",
+              status_karyawan: "-",
               gaji_pokok: 5000000.0,
               tanggal_masuk: new Date(),
+              jabatan: "-",
+              alamat: "-",
+              no_hp: "-",
             },
           });
 
           console.log("✅ New user created:", user.username);
           console.log("✅ Employee created:", employee.employee_id);
+          console.log(
+            "⚠️  Password: NOT SET (empty) - user must set in Complete Profile"
+          );
 
           // Attach employee to user object
           user.employee = employee;

@@ -225,7 +225,7 @@ module.exports = function (prisma) {
     }
   });
 
-  // ✅ POST: Login user
+  // ✅ POST: Login user - UPDATED UNTUK CEK PASSWORD KOSONG
   router.post("/login", async (req, res) => {
     const { username, password } = req.body;
 
@@ -239,18 +239,28 @@ module.exports = function (prisma) {
         });
       }
 
-      // Cari user dengan include employee
-      const user = await prisma.user.findUnique({
-        where: { username },
-        include: {
-          employee: true, // ⭐ Include employee data
+      // ✅ Cari user berdasarkan username ATAU email
+      const user = await prisma.user.findFirst({
+        where: {
+          OR: [{ username: username }, { email: username }],
         },
+        include: { employee: true },
       });
 
       if (!user) {
         console.log("❌ User not found:", username);
         return res.status(401).json({
-          error: "Username atau password salah.",
+          error: "Username atau email tidak ditemukan.",
+        });
+      }
+
+      // ✅ CEK: Apakah user punya password (untuk user dari Google yang belum set password)
+      if (!user.password || user.password === "") {
+        console.log("⚠️  User registered via Google but hasn't set password");
+        return res.status(401).json({
+          error:
+            "Anda belum mengatur password. Silakan lengkapi profil terlebih dahulu atau gunakan 'Login dengan Google'.",
+          code: "PASSWORD_NOT_SET",
         });
       }
 
@@ -260,15 +270,15 @@ module.exports = function (prisma) {
       if (!isValidPassword) {
         console.log("❌ Invalid password for:", username);
         return res.status(401).json({
-          error: "Username atau password salah.",
+          error: "Password salah.",
         });
       }
 
-      // ⭐ PENTING: Jika user tidak punya employee record, buat sekarang
+      // ✅ PENTING: Jika user tidak punya employee record, buat sekarang
       let employeeId = user.employee?.employee_id || null;
 
       if (!employeeId) {
-        console.log("⚠ User doesn't have employee record, creating one...");
+        console.log("⚠️  User doesn't have employee record, creating one...");
 
         const newEmployee = await prisma.employee.create({
           data: {
@@ -287,13 +297,7 @@ module.exports = function (prisma) {
       console.log("  - User ID:", user.user_id);
       console.log("  - Username:", user.username);
       console.log("  - Role:", user.role);
-      console.log(
-        "  - Employee ID:",
-        employeeId,
-        "(type:",
-        typeof employeeId,
-        ")"
-      );
+      console.log("  - Employee ID:", employeeId);
 
       // Generate JWT token
       const token = jwt.sign(
@@ -301,13 +305,14 @@ module.exports = function (prisma) {
           userId: user.user_id,
           username: user.username,
           role: user.role,
-          employee_id: employeeId, // ⭐ INTEGER or null
+          employee_id: employeeId,
+          nama_lengkap: user.employee?.nama_lengkap || user.username,
         },
         JWT_SECRET,
         { expiresIn: "24h" }
       );
 
-      console.log("  - Token generated, length:", token.length);
+      console.log("  - Token generated successfully");
 
       res.json({
         token,
@@ -316,7 +321,7 @@ module.exports = function (prisma) {
           username: user.username,
           email: user.email,
           role: user.role,
-          employee_id: employeeId, // ⭐ INTEGER
+          employee_id: employeeId,
           nama_lengkap: user.employee?.nama_lengkap || user.username,
         },
       });

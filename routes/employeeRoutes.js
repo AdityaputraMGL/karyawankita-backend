@@ -30,6 +30,84 @@ module.exports = function (prisma) {
     }
   );
 
+  router.put("/complete-profile", auth.authenticateToken, async (req, res) => {
+    try {
+      const { jabatan, alamat, no_hp, status_karyawan, password } = req.body;
+      const userId = req.user.userId;
+
+      console.log("📝 Complete profile request for user:", userId);
+      console.log("📦 Request body:", req.body);
+      console.log("🔍 Status Karyawan diterima:", status_karyawan);
+
+      // Validasi input
+      if (!jabatan || !alamat || !no_hp || !status_karyawan) {
+        return res.status(400).json({
+          error: "Semua field wajib diisi",
+        });
+      }
+
+      // Validasi no HP (10-15 digit, bisa pakai awalan +62 atau 08)
+      const cleanPhone = no_hp.replace(/[\s-]/g, ""); // Hapus spasi dan dash
+      if (!/^(\+62|62|0)[0-9]{9,13}$/.test(cleanPhone)) {
+        return res.status(400).json({
+          error:
+            "Nomor HP tidak valid (gunakan format: 08xxxxxxxxxx atau +62xxxxxxxxxx)",
+        });
+      }
+
+      // Cari employee berdasarkan user_id
+      const employee = await prisma.employee.findUnique({
+        where: { user_id: userId },
+      });
+
+      if (!employee) {
+        return res.status(404).json({
+          error: "Data karyawan tidak ditemukan",
+        });
+      }
+
+      // Update employee data
+      const updatedEmployee = await prisma.employee.update({
+        where: { user_id: userId },
+        data: {
+          jabatan: jabatan.trim(),
+          alamat: alamat.trim(),
+          no_hp: no_hp.trim(),
+          status_karyawan: status_karyawan,
+        },
+        include: {
+          user: true,
+        },
+      });
+
+      // ✅ Update password jika diisi
+      if (password && password.trim().length >= 6) {
+        const bcrypt = require("bcryptjs");
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        await prisma.user.update({
+          where: { user_id: userId },
+          data: { password: hashedPassword },
+        });
+
+        console.log("✅ Password also set for user:", userId);
+      }
+
+      console.log("✅ Profile completed successfully for:", userId);
+
+      res.json({
+        message: "Profil berhasil dilengkapi",
+        employee: updatedEmployee,
+      });
+    } catch (error) {
+      console.error("❌ Error updating profile:", error);
+      res.status(500).json({
+        error: "Gagal melengkapi profil",
+        details: error.message,
+      });
+    }
+  });
+
   // =================================================================
   // GET employee berdasarkan ID
   // =================================================================

@@ -119,6 +119,7 @@ const statsRoutes = require("./routes/statsRoutes");
 const passwordResetRoutes = require("./routes/passwordResetRoutes");
 const alphaRoutes = require("./routes/alphaRoutes");
 const googleAuthRoutes = require("./routes/googleAuthRoutes");
+const profileRoutes = require("./routes/profileRoutes");
 
 // ✅ Use Routes
 app.use("/api/employees", employeeRoutes(prisma));
@@ -131,6 +132,7 @@ app.use("/api/stats", statsRoutes(prisma));
 app.use("/api/auth", passwordResetRoutes);
 app.use("/api/alpha", alphaRoutes(prisma, alphaCheckService));
 app.use("/api/auth", googleAuthRoutes(prisma, passport));
+app.use("/api", profileRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {

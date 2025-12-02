@@ -339,9 +339,6 @@ module.exports = function (prisma) {
     try {
       const user = await prisma.user.findUnique({
         where: { user_id: req.user.userId },
-        include: {
-          employee: true,
-        },
         select: {
           user_id: true,
           username: true,
@@ -355,6 +352,7 @@ module.exports = function (prisma) {
               nama_lengkap: true,
               jabatan: true,
               no_hp: true,
+              alamat: true, // tambahkan jika perlu
               tanggal_masuk: true,
               gaji_pokok: true,
             },

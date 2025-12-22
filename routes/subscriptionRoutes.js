@@ -2,10 +2,12 @@
 const express = require("express");
 const authMiddleware = require("../middleware/auth");
 const MidtransService = require("../services/midtransService");
+const InvoiceService = require("../services/invoiceService");
 
 module.exports = function (prisma) {
   const router = express.Router();
   const midtransService = new MidtransService();
+  const invoiceService = new InvoiceService();
 
   // ============================================
   // 📋 GET: Get All Plans (Public)
@@ -488,6 +490,283 @@ module.exports = function (prisma) {
       }
     }
   );
+
+  // ============================================
+  // 📄 GET: Download Invoice PDF
+  // ============================================
+  router.get(
+    "/invoice/:payment_id",
+    authMiddleware.authenticateToken,
+    async (req, res) => {
+      try {
+        const { payment_id } = req.params;
+        const userId = req.user.userId;
+
+        console.log("📄 Generating invoice for payment:", payment_id);
+
+        // Get payment with subscription
+        const payment = await prisma.payment.findUnique({
+          where: { payment_id: parseInt(payment_id) },
+          include: {
+            subscription: {
+              include: {
+                plan: true,
+                user: true,
+              },
+            },
+          },
+        });
+
+        if (!payment) {
+          return res.status(404).json({ error: "Payment tidak ditemukan." });
+        }
+
+        // Check authorization
+        if (
+          req.user.role !== "Admin" &&
+          payment.subscription.user_id !== userId
+        ) {
+          return res.status(403).json({ error: "Akses ditolak." });
+        }
+
+        // Prepare invoice data
+        const invoiceData = await invoiceService.prepareInvoiceData(
+          payment,
+          payment.subscription,
+          prisma
+        );
+
+        // Generate PDF
+        const pdfBuffer = await invoiceService.generateInvoicePDF(invoiceData);
+
+        // Send PDF
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename=invoice-${payment.order_id}.pdf`
+        );
+        res.send(pdfBuffer);
+
+        console.log("✅ Invoice generated successfully");
+      } catch (error) {
+        console.error("❌ Error generating invoice:", error);
+        res.status(500).json({
+          error: "Gagal generate invoice.",
+          details: error.message,
+        });
+      }
+    }
+  );
+
+  // ============================================
+  // 📄 GET: View Invoice in Browser
+  // ============================================
+  router.get(
+    "/invoice/:payment_id/view",
+    authMiddleware.authenticateToken,
+    async (req, res) => {
+      try {
+        const { payment_id } = req.params;
+        const userId = req.user.userId;
+
+        // Get payment
+        const payment = await prisma.payment.findUnique({
+          where: { payment_id: parseInt(payment_id) },
+          include: {
+            subscription: {
+              include: {
+                plan: true,
+                user: true,
+              },
+            },
+          },
+        });
+
+        if (!payment) {
+          return res.status(404).json({ error: "Payment tidak ditemukan." });
+        }
+
+        // Check authorization
+        if (
+          req.user.role !== "Admin" &&
+          payment.subscription.user_id !== userId
+        ) {
+          return res.status(403).json({ error: "Akses ditolak." });
+        }
+
+        // Prepare invoice data
+        const invoiceData = await invoiceService.prepareInvoiceData(
+          payment,
+          payment.subscription,
+          prisma
+        );
+
+        // Generate PDF
+        const pdfBuffer = await invoiceService.generateInvoicePDF(invoiceData);
+
+        // Display in browser
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "inline");
+        res.send(pdfBuffer);
+      } catch (error) {
+        console.error("❌ Error viewing invoice:", error);
+        res.status(500).json({ error: "Gagal menampilkan invoice." });
+      }
+    }
+  );
+
+  // =================================================================
+  // 🧪 POST: Activate Dummy Subscription (For Testing Only)
+  // =================================================================
+  router.post(
+    "/activate-dummy",
+    authMiddleware.authenticateToken,
+    authMiddleware.authorizeRole(["Admin"]),
+    async (req, res) => {
+      try {
+        const { plan_id } = req.body;
+        const userId = req.user.userId;
+
+        console.log("🧪 Activating DUMMY subscription...");
+        console.log("  - User ID:", userId);
+        console.log("  - Plan ID:", plan_id);
+
+        // Validasi
+        if (!plan_id) {
+          return res.status(400).json({ error: "Plan ID wajib diisi." });
+        }
+
+        // Get plan
+        const plan = await prisma.subscriptionPlan.findUnique({
+          where: { plan_id: parseInt(plan_id) },
+        });
+
+        if (!plan) {
+          return res.status(404).json({ error: "Plan tidak ditemukan." });
+        }
+
+        // Get employee count
+        const employeeCount = await prisma.employee.count({
+          where: {
+            user: {
+              status: "active",
+            },
+          },
+        });
+
+        if (employeeCount === 0) {
+          return res.status(400).json({
+            error:
+              "Tidak ada karyawan aktif. Tambahkan karyawan terlebih dahulu.",
+          });
+        }
+
+        const pricePerEmployee = parseFloat(plan.price);
+        const totalAmount = pricePerEmployee * employeeCount;
+
+        console.log("💰 Calculation:");
+        console.log(
+          `  - Price per employee: Rp ${pricePerEmployee.toLocaleString(
+            "id-ID"
+          )}`
+        );
+        console.log(`  - Total employees: ${employeeCount}`);
+        console.log(
+          `  - Total amount: Rp ${totalAmount.toLocaleString("id-ID")}`
+        );
+
+        // Create or update subscription
+        let subscription = await prisma.subscription.findUnique({
+          where: { user_id: userId },
+        });
+
+        const startDate = new Date();
+        const endDate = new Date(
+          startDate.getTime() + plan.duration_days * 24 * 60 * 60 * 1000
+        );
+
+        if (!subscription) {
+          subscription = await prisma.subscription.create({
+            data: {
+              user_id: userId,
+              plan_id: plan.plan_id,
+              status: "active",
+              start_date: startDate,
+              end_date: endDate,
+            },
+          });
+          console.log(
+            "✅ New subscription created:",
+            subscription.subscription_id
+          );
+        } else {
+          subscription = await prisma.subscription.update({
+            where: { subscription_id: subscription.subscription_id },
+            data: {
+              plan_id: plan.plan_id,
+              status: "active",
+              start_date: startDate,
+              end_date: endDate,
+            },
+          });
+          console.log("✅ Subscription updated:", subscription.subscription_id);
+        }
+
+        // Create dummy payment record
+        const orderId = `DUMMY-${userId}-${Date.now()}`;
+        const payment = await prisma.payment.create({
+          data: {
+            subscription_id: subscription.subscription_id,
+            order_id: orderId,
+            amount: totalAmount,
+            status: "success",
+            payment_type: "dummy",
+            transaction_id: `TXN-DUMMY-${Date.now()}`,
+            payment_date: new Date(),
+            metadata: JSON.stringify({
+              plan_name: plan.plan_name,
+              price_per_employee: pricePerEmployee,
+              total_employees: employeeCount,
+              calculation: `${employeeCount} karyawan × Rp ${pricePerEmployee.toLocaleString(
+                "id-ID"
+              )} = Rp ${totalAmount.toLocaleString("id-ID")}`,
+              note: "DUMMY SUBSCRIPTION - FOR TESTING ONLY",
+            }),
+          },
+        });
+
+        console.log("✅ DUMMY payment created:", payment.payment_id);
+        console.log("✅ DUMMY subscription activated successfully!");
+
+        res.json({
+          message: "Subscription berhasil diaktifkan (DUMMY MODE)",
+          subscription: {
+            subscription_id: subscription.subscription_id,
+            plan_name: plan.plan_name,
+            status: "active",
+            start_date: startDate,
+            end_date: endDate,
+          },
+          billing: {
+            order_id: orderId,
+            amount: totalAmount,
+            employees: employeeCount,
+            calculation: `${employeeCount} karyawan × Rp ${pricePerEmployee.toLocaleString(
+              "id-ID"
+            )} = Rp ${totalAmount.toLocaleString("id-ID")}`,
+          },
+        });
+      } catch (error) {
+        console.error("❌ Error activating dummy subscription:", error);
+        res.status(500).json({
+          error: "Gagal mengaktifkan subscription",
+          details: error.message,
+        });
+      }
+    }
+  );
+
+  return router;
 
   return router;
 };

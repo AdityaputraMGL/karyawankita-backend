@@ -656,5 +656,45 @@ module.exports = function (prisma) {
     }
   );
 
+  // GET: Bonus overtime per employee
+  router.get(
+    "/bonus/:employee_id",
+    authenticateToken,
+    authorizeRole(["Admin", "HR"]),
+    async (req, res) => {
+      try {
+        const { employee_id } = req.params;
+        const { periode } = req.query;
+
+        const [year, month] = periode.split("-");
+        const startDate = new Date(year, month - 1, 1);
+        const endDate = new Date(year, month, 0, 23, 59, 59);
+
+        const overtimeRecords = await prisma.overtime.findMany({
+          where: {
+            employee_id: parseInt(employee_id),
+            status: "approved",
+            tanggal: { gte: startDate, lte: endDate },
+          },
+        });
+
+        const totalBonus = overtimeRecords.reduce(
+          (sum, ot) => sum + parseFloat(ot.total_bonus || 0),
+          0
+        );
+
+        res.json({
+          employee_id: parseInt(employee_id),
+          periode,
+          overtime_count: overtimeRecords.length,
+          total_bonus: totalBonus,
+          records: overtimeRecords,
+        });
+      } catch (error) {
+        res.status(500).json({ error: "Gagal menghitung bonus" });
+      }
+    }
+  );
+
   return router;
 };

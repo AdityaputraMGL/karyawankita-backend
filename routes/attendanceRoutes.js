@@ -99,6 +99,84 @@ module.exports = function (prisma) {
     }
   }
 
+  //Helper: Auto-detect dan create overtime record
+
+  async function checkAndCreateOvertime(
+    attendanceId,
+    employeeId,
+    jamPulang,
+    prisma
+  ) {
+    try {
+      console.log("🕒 Checking for overtime...");
+
+      // Get employee schedule
+      const employeeSchedule = await prisma.employeeSchedule.findFirst({
+        where: {
+          employee_id: employeeId,
+          is_active: true,
+        },
+        include: {
+          schedule: true,
+        },
+      });
+
+      if (!employeeSchedule || !employeeSchedule.schedule) {
+        console.log("⚠️ No active schedule found, skipping overtime check");
+        return null;
+      }
+
+      const scheduledEndTime = employeeSchedule.schedule.end_time;
+      console.log(`   - Scheduled end: ${scheduledEndTime}`);
+      console.log(`   - Actual checkout: ${jamPulang}`);
+
+      // Calculate overtime hours
+      const [schedHour, schedMin] = scheduledEndTime.split(":").map(Number);
+      const [actualHour, actualMin] = jamPulang.split(":").map(Number);
+
+      const schedMinutes = schedHour * 60 + schedMin;
+      const actualMinutes = actualHour * 60 + actualMin;
+      const diffMinutes = actualMinutes - schedMinutes;
+
+      console.log(`   - Difference: ${diffMinutes} minutes`);
+
+      // Minimum 30 minutes overtime
+      if (diffMinutes < 30) {
+        console.log("   ℹ️ Less than 30 minutes, no overtime");
+        return null;
+      }
+
+      const overtimeHours = (diffMinutes / 60).toFixed(2);
+      const bonusPerHour = 50000;
+      const totalBonus = parseFloat(overtimeHours) * bonusPerHour;
+
+      console.log(`   💰 Overtime detected: ${overtimeHours} hours`);
+      console.log(`   💵 Bonus: Rp ${totalBonus.toLocaleString()}`);
+
+      // Create overtime record
+      const overtime = await prisma.overtime.create({
+        data: {
+          employee_id: employeeId,
+          attendance_id: attendanceId,
+          tanggal: new Date(),
+          jam_checkout: jamPulang,
+          jam_scheduled: scheduledEndTime,
+          overtime_hours: parseFloat(overtimeHours),
+          bonus_per_hour: bonusPerHour,
+          total_bonus: totalBonus,
+          status: "pending",
+          reason: `Auto-detected: Checkout at ${jamPulang}, scheduled end ${scheduledEndTime}`,
+        },
+      });
+
+      console.log(`   ✅ Overtime record created: ID ${overtime.overtime_id}`);
+      return overtime;
+    } catch (error) {
+      console.error("   ❌ Error creating overtime:", error);
+      return null;
+    }
+  }
+
   // ✅ GET semua data absensi - ROLE-AWARE dengan ENHANCED DEBUGGING
   router.get("/", authMiddleware.authenticateToken, async (req, res) => {
     try {
@@ -671,10 +749,10 @@ module.exports = function (prisma) {
             .json({ error: "employee_id tidak dapat ditentukan." });
         }
 
-        // ⭐ CHECK 1: Sudah lewat jam 18:00? → TIDAK BISA ABSEN
-        if (currentHour >= 18) {
+        // ⭐ CHECK 1: Sudah lewat jam 23:00? → TIDAK BISA ABSEN
+        if (currentHour >= 23) {
           return res.status(400).json({
-            error: "Absensi sudah ditutup. Waktu absen: 06:00 - 17:59",
+            error: "Absensi sudah ditutup. Waktu absen: 06:00 - 22:59",
             currentTime: currentTime,
           });
         }
@@ -702,21 +780,125 @@ module.exports = function (prisma) {
           });
         }
 
-        // ⭐ CHECK 3: Tentukan status berdasarkan waktu
+        // ⭐ NEW: GET EMPLOYEE SCHEDULE
+        let expectedStartTime = "08:00"; // default fallback
+        let earliestCheckInTime = "06:00"; // default earliest check-in
+        let hasSchedule = false;
+
+        try {
+          // Get employee's active schedule
+          const employeeSchedule = await prisma.employeeSchedule.findFirst({
+            where: {
+              employee_id: targetEmployeeId,
+              is_active: true,
+            },
+            include: {
+              schedule: true,
+            },
+          });
+
+          if (employeeSchedule && employeeSchedule.schedule) {
+            expectedStartTime = employeeSchedule.schedule.start_time;
+            hasSchedule = true;
+
+            // Calculate earliest check-in time (1 hour before schedule)
+            const [schedHour, schedMin] = expectedStartTime
+              .split(":")
+              .map(Number);
+            let earliestHour = schedHour - 1;
+            let earliestMin = schedMin;
+
+            // Handle midnight crossing
+            if (earliestHour < 0) {
+              earliestHour = 23 + earliestHour;
+            }
+
+            earliestCheckInTime = `${String(earliestHour).padStart(
+              2,
+              "0"
+            )}:${String(earliestMin).padStart(2, "0")}`;
+
+            console.log(`📅 Employee schedule found:`);
+            console.log(`   - Start time: ${expectedStartTime}`);
+            console.log(`   - Earliest check-in: ${earliestCheckInTime}`);
+          } else {
+            console.log(`⚠️ No active schedule found, using default 08:00`);
+          }
+        } catch (scheduleError) {
+          console.error(
+            "⚠️ Error fetching schedule, using default:",
+            scheduleError.message
+          );
+        }
+
+        // ⭐ CHECK 3: Apakah terlalu awal untuk absen?
+        const currentTotalMinutes = currentHour * 60 + currentMinute;
+        const [earliestHour, earliestMin] = earliestCheckInTime
+          .split(":")
+          .map(Number);
+        const earliestTotalMinutes = earliestHour * 60 + earliestMin;
+
+        console.log(`⏰ Current: ${currentTime} (${currentTotalMinutes} min)`);
+        console.log(
+          `⏰ Earliest allowed: ${earliestCheckInTime} (${earliestTotalMinutes} min)`
+        );
+
+        // Special handling for schedules that cross midnight
+        const [schedHour] = expectedStartTime.split(":").map(Number);
+        const isMidnightCrossing = schedHour < 12 && earliestHour > 12;
+
+        if (!isMidnightCrossing && currentTotalMinutes < earliestTotalMinutes) {
+          const tooEarlyMinutes = earliestTotalMinutes - currentTotalMinutes;
+          const tooEarlyHours = Math.floor(tooEarlyMinutes / 60);
+          const tooEarlyRemainingMinutes = tooEarlyMinutes % 60;
+
+          return res.status(400).json({
+            error: "Belum waktunya absen",
+            message: `Anda terlalu awal untuk absen. Jadwal masuk: ${expectedStartTime}`,
+            details: `Waktu absen dimulai ${
+              tooEarlyHours > 0 ? tooEarlyHours + " jam " : ""
+            }${tooEarlyRemainingMinutes} menit lagi (mulai ${earliestCheckInTime})`,
+            currentTime: currentTime,
+            earliestCheckInTime: earliestCheckInTime,
+            scheduleStartTime: expectedStartTime,
+          });
+        }
+
+        // ⭐ CHECK 4: Tentukan status berdasarkan jadwal karyawan
+        const [scheduleHour, scheduleMinute] = expectedStartTime
+          .split(":")
+          .map(Number);
+        const scheduleTotalMinutes = scheduleHour * 60 + scheduleMinute;
+
         let status = "hadir";
         let keterangan = null;
 
-        if (currentHour >= 8) {
-          // Setelah jam 08:00 → Terlambat
+        console.log(
+          `⏰ Schedule: ${expectedStartTime} (${scheduleTotalMinutes} min)`
+        );
+
+        if (currentTotalMinutes > scheduleTotalMinutes) {
+          // Terlambat jika absen setelah jadwal masuk
+          const lateMinutes = currentTotalMinutes - scheduleTotalMinutes;
+          const lateHours = Math.floor(lateMinutes / 60);
+          const lateRemainingMinutes = lateMinutes % 60;
+
           status = "terlambat";
-          keterangan = `Terlambat check-in pada ${currentTime}`;
-          console.log(`⚠️ Late check-in detected: ${currentTime}`);
+          keterangan = `Terlambat ${
+            lateHours > 0 ? lateHours + " jam " : ""
+          }${lateRemainingMinutes} menit (Jadwal: ${expectedStartTime}, Check-in: ${currentTime})`;
+
+          console.log(`⚠️ Late check-in detected: ${lateMinutes} minutes late`);
         } else {
-          // Sebelum jam 08:00 → Normal
+          // Tepat waktu atau lebih awal
+          const earlyMinutes = scheduleTotalMinutes - currentTotalMinutes;
+          if (earlyMinutes > 0) {
+            keterangan = `Check-in lebih awal ${earlyMinutes} menit dari jadwal`;
+          }
           console.log(`✅ On-time check-in: ${currentTime}`);
         }
 
-        // ⭐ CHECK 4: Cek apakah ada approved request (WFH/Hybrid)
+        // ⭐ CHECK 5: Cek apakah ada approved request (WFH/Hybrid)
         const approvedRequest = await prisma.attendance.findFirst({
           where: {
             employee_id: targetEmployeeId,
@@ -796,19 +978,25 @@ module.exports = function (prisma) {
         let message = `✓ Absen Masuk berhasil pada ${currentTime}`;
 
         if (status === "terlambat") {
-          const lateHours = currentHour - 8;
-          const lateMinutes = currentMinute;
+          const lateMinutes = currentTotalMinutes - scheduleTotalMinutes;
+          const lateHours = Math.floor(lateMinutes / 60);
+          const lateRemainingMinutes = lateMinutes % 60;
 
           message =
             `⚠️ Check-in berhasil (TERLAMBAT) pada ${currentTime}\n` +
-            `Anda terlambat ${lateHours} jam ${lateMinutes} menit.\n` +
+            `Jadwal masuk: ${expectedStartTime}\n` +
+            `Terlambat: ${
+              lateHours > 0 ? lateHours + " jam " : ""
+            }${lateRemainingMinutes} menit\n` +
             `Potongan gaji: Rp ${POTONGAN_TERLAMBAT.toLocaleString()}\n` +
-            `Harap datang tepat waktu besok (sebelum 08:00).`;
+            `Harap datang tepat waktu sesuai jadwal Anda.`;
         }
 
         res.status(approvedRequest ? 200 : 201).json({
           message: message,
           status: status,
+          schedule_start_time: expectedStartTime,
+          actual_checkin_time: currentTime,
           potongan: status === "terlambat" ? POTONGAN_TERLAMBAT : 0,
           data: attendanceRecord,
         });
@@ -860,15 +1048,18 @@ module.exports = function (prisma) {
           });
         }
 
+        const now = new Date();
+        const currentTime =
+          jam_pulang ||
+          `${String(now.getHours()).padStart(2, "0")}:${String(
+            now.getMinutes()
+          ).padStart(2, "0")}`;
+
+        // Update attendance
         const updatedAttendance = await prisma.attendance.update({
           where: { attendance_id: parseInt(id) },
           data: {
-            jam_pulang:
-              jam_pulang ||
-              new Date().toLocaleTimeString("id-ID", {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
+            jam_pulang: currentTime,
             lokasi_pulang: lokasi_pulang || null,
             akurasi_pulang: akurasi_pulang ? parseInt(akurasi_pulang) : null,
           },
@@ -878,7 +1069,33 @@ module.exports = function (prisma) {
         });
 
         console.log(`✅ Check-out successful by ${role} for ID ${id}`);
-        res.json(updatedAttendance);
+
+        // ⭐⭐⭐ AUTO-DETECT OVERTIME ⭐⭐⭐
+        const overtime = await checkAndCreateOvertime(
+          parseInt(id),
+          existingAttendance.employee_id,
+          currentTime,
+          prisma
+        );
+
+        let message = `✅ Check-out berhasil pada ${currentTime}`;
+
+        if (overtime) {
+          message =
+            `✅ Check-out berhasil pada ${currentTime}\n\n` +
+            `🎉 Overtime terdeteksi!\n` +
+            `⏱️ Durasi: ${overtime.overtime_hours} jam\n` +
+            `💰 Bonus: Rp ${parseFloat(
+              overtime.total_bonus
+            ).toLocaleString()}\n\n` +
+            `⏳ Menunggu approval dari admin untuk mendapatkan bonus overtime.`;
+        }
+
+        res.json({
+          message,
+          data: updatedAttendance,
+          overtime: overtime || null,
+        });
       } catch (error) {
         console.error("Error updating attendance:", error);
         res.status(400).json({
@@ -888,7 +1105,6 @@ module.exports = function (prisma) {
       }
     }
   );
-
   // ✅ DELETE: Hapus absensi - HANYA ADMIN & HR
   router.delete(
     "/:id",

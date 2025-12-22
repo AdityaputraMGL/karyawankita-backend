@@ -17,9 +17,567 @@
 
 const express = require("express");
 const authMiddleware = require("../middleware/auth");
+const nodemailer = require("nodemailer");
+
+// ✅ Email Configuration
+const emailTransporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST || "smtp.gmail.com",
+  port: parseInt(process.env.EMAIL_PORT) || 587,
+  secure: process.env.EMAIL_SECURE === "true",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+// Verifikasi koneksi email
+emailTransporter.verify(function (error, success) {
+  if (error) {
+    console.error("❌ Email configuration error:", error);
+  } else {
+    console.log("✅ Email server ready for user approval notifications");
+  }
+});
 
 module.exports = function (prisma, alphaCheckService) {
   const router = express.Router();
+
+  // ========================================
+  // ✅ APPROVAL EMAIL TEMPLATE
+  // ========================================
+  function getApprovalEmailHTML(username, email, role) {
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+    const loginUrl = `${frontendUrl}/login`;
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .email-wrapper {
+      max-width: 600px;
+      margin: 40px auto;
+      background-color: #ffffff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    .header {
+      background: linear-gradient(135deg, #5C54A4 0%, #764ba2 100%);
+      padding: 40px 30px;
+      text-align: center;
+      color: white;
+    }
+    .logo {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 16px;
+      background: white;
+      border-radius: 12px;
+      padding: 10px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .content {
+      padding: 40px 30px;
+    }
+    .success-badge {
+      background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 50px;
+      display: inline-block;
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+    .info-box {
+      background: #f8f9fa;
+      border-left: 4px solid #5C54A4;
+      padding: 20px;
+      margin: 24px 0;
+      border-radius: 8px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #e9ecef;
+    }
+    .info-row:last-child {
+      border-bottom: none;
+    }
+    .info-label {
+      font-weight: 600;
+      color: #666;
+    }
+    .info-value {
+      color: #333;
+      font-weight: 500;
+    }
+    .role-badge {
+      background: linear-gradient(135deg, #FF9800 0%, #F57C00 100%);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .button {
+      display: inline-block;
+      padding: 16px 40px;
+      background: linear-gradient(135deg, #5C54A4 0%, #764ba2 100%);
+      color: white !important;
+      text-decoration: none;
+      border-radius: 10px;
+      margin: 24px 0;
+      font-weight: 600;
+      font-size: 16px;
+      box-shadow: 0 4px 15px rgba(92, 84, 164, 0.3);
+      transition: transform 0.2s;
+    }
+    .footer {
+      background: #f8f9fa;
+      padding: 30px;
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+    }
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #ddd, transparent);
+      margin: 30px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <div class="header">
+      <div class="logo">
+        <img src="${frontendUrl}/images/hris.png" alt="HRIS Logo" style="width: 80px; height: 80px; object-fit: contain;">
+      </div>
+      <h1>HRIS Management</h1>
+      <p style="margin: 8px 0 0 0; opacity: 0.9;">Human Resource Information System</p>
+    </div>
+    
+    <div class="content">
+      <div style="text-align: center;">
+        <div class="success-badge">✅ Akun Disetujui!</div>
+      </div>
+      
+      <h2 style="color: #333; font-size: 24px; margin: 24px 0 16px 0;">
+        Selamat, ${username}! 🎉
+      </h2>
+      
+      <p style="color: #666; font-size: 16px; line-height: 1.8;">
+        Akun HRIS Anda telah <strong>disetujui</strong> oleh Administrator. 
+        Anda sekarang dapat mengakses sistem dengan role sebagai <strong>${role}</strong>.
+      </p>
+      
+      <div class="info-box">
+        <div class="info-row">
+          <span class="info-label">👤 Username</span>
+          <span class="info-value">${username}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">📧 Email</span>
+          <span class="info-value">${email}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-label">🎭 Role</span>
+          <span class="role-badge">${role}</span>
+        </div>
+      </div>
+      
+      <div style="text-align: center; margin: 32px 0;">
+        <a href="${loginUrl}" class="button">🚀 Login Sekarang</a>
+      </div>
+      
+      <div class="divider"></div>
+      
+      <div style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 16px; border-radius: 8px;">
+        <strong style="color: #856404;">💡 Tips:</strong>
+        <ul style="margin: 8px 0 0 0; padding-left: 20px; color: #856404;">
+          <li>Gunakan username dan password yang Anda daftarkan untuk login</li>
+          <li>Pastikan untuk melengkapi profil Anda setelah login pertama kali</li>
+          <li>Jika ada pertanyaan, hubungi Administrator atau HR</li>
+        </ul>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p style="margin: 0 0 8px 0;">Email ini dikirim secara otomatis oleh sistem HRIS</p>
+      <p style="margin: 0; font-size: 13px; color: #999;">
+        © ${new Date().getFullYear()} HRIS Management System. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  // ========================================
+  // ✅ REJECTION EMAIL TEMPLATE
+  // ========================================
+  function getRejectionEmailHTML(username, email, reason) {
+    const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .email-wrapper {
+      max-width: 600px;
+      margin: 40px auto;
+      background-color: #ffffff;
+      border-radius: 16px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+    }
+    .header {
+      background: linear-gradient(135deg, #5C54A4 0%, #764ba2 100%);
+      padding: 40px 30px;
+      text-align: center;
+      color: white;
+    }
+    .logo {
+      width: 100px;
+      height: 100px;
+      margin: 0 auto 16px;
+      background: white;
+      border-radius: 12px;
+      padding: 10px;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 28px;
+      font-weight: 700;
+    }
+    .content {
+      padding: 40px 30px;
+    }
+    .warning-badge {
+      background: linear-gradient(135deg, #F44336 0%, #d32f2f 100%);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 50px;
+      display: inline-block;
+      font-weight: 600;
+      font-size: 16px;
+      margin-bottom: 20px;
+    }
+    .reason-box {
+      background: #fff5f5;
+      border-left: 4px solid #F44336;
+      padding: 20px;
+      margin: 24px 0;
+      border-radius: 8px;
+    }
+    .footer {
+      background: #f8f9fa;
+      padding: 30px;
+      text-align: center;
+      color: #666;
+      font-size: 14px;
+    }
+    .divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #ddd, transparent);
+      margin: 30px 0;
+    }
+  </style>
+</head>
+<body>
+  <div class="email-wrapper">
+    <div class="header">
+      <div class="logo">
+        <img src="${frontendUrl}/images/hris.png" alt="HRIS Logo" style="width: 80px; height: 80px; object-fit: contain;">
+      </div>
+      <h1>HRIS Management</h1>
+      <p style="margin: 8px 0 0 0; opacity: 0.9;">Human Resource Information System</p>
+    </div>
+    
+    <div class="content">
+      <div style="text-align: center;">
+        <div class="warning-badge">❌ Pendaftaran Ditolak</div>
+      </div>
+      
+      <h2 style="color: #333; font-size: 24px; margin: 24px 0 16px 0;">
+        Hai ${username},
+      </h2>
+      
+      <p style="color: #666; font-size: 16px; line-height: 1.8;">
+        Mohon maaf, pendaftaran akun HRIS Anda dengan email <strong>${email}</strong> 
+        telah <strong>ditolak</strong> oleh Administrator.
+      </p>
+      
+      <div class="reason-box">
+        <strong style="color: #d32f2f; font-size: 16px;">📋 Alasan Penolakan:</strong>
+        <p style="margin: 12px 0 0 0; color: #666; font-size: 15px; line-height: 1.6;">
+          ${reason || "Tidak ada alasan spesifik yang diberikan."}
+        </p>
+      </div>
+      
+      <div class="divider"></div>
+      
+      <div style="background: #e3f2fd; border-left: 4px solid #2196F3; padding: 16px; border-radius: 8px;">
+        <strong style="color: #1565c0;">💬 Butuh Bantuan?</strong>
+        <p style="margin: 8px 0 0 0; color: #1565c0; line-height: 1.6;">
+          Jika Anda merasa ada kesalahan atau ingin mendiskusikan hal ini lebih lanjut, 
+          silakan hubungi Administrator atau tim HR melalui email atau telepon kantor.
+        </p>
+      </div>
+    </div>
+    
+    <div class="footer">
+      <p style="margin: 0 0 8px 0;">Email ini dikirim secara otomatis oleh sistem HRIS</p>
+      <p style="margin: 0; font-size: 13px; color: #999;">
+        © ${new Date().getFullYear()} HRIS Management System. All rights reserved.
+      </p>
+    </div>
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  /**
+   * GET /api/alpha/users/pending
+   * Get pending users untuk approval
+   */
+  router.get(
+    "/users/pending",
+    authMiddleware.authenticateToken,
+    authMiddleware.authorizeRole(["Admin"]),
+    async (req, res) => {
+      try {
+        const pendingUsers = await prisma.user.findMany({
+          where: { status: "pending" },
+          include: {
+            employee: {
+              select: {
+                nama_lengkap: true,
+                jabatan: true,
+                no_hp: true,
+              },
+            },
+          },
+          orderBy: { created_at: "desc" },
+        });
+
+        res.json({
+          count: pendingUsers.length,
+          users: pendingUsers,
+        });
+      } catch (error) {
+        res.status(500).json({
+          error: "Gagal mengambil pending users",
+          details: error.message,
+        });
+      }
+    }
+  );
+
+  //**✨ POST /api/alpha/users/approve/:user_id (UPDATED WITH EMAIL)Approve user dan assign role + KIRIM EMAIL
+
+  router.post(
+    "/users/approve/:user_id",
+    authMiddleware.authenticateToken,
+    authMiddleware.authorizeRole(["Admin"]),
+    async (req, res) => {
+      try {
+        const { user_id } = req.params;
+        const { approved_role, notes } = req.body;
+
+        const validRoles = ["Admin", "HR", "Karyawan"];
+        if (!validRoles.includes(approved_role)) {
+          return res.status(400).json({
+            error: "Role tidak valid",
+            valid_roles: validRoles,
+          });
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { user_id: parseInt(user_id) },
+          include: { employee: true },
+        });
+
+        if (!user) {
+          return res.status(404).json({ error: "User tidak ditemukan" });
+        }
+
+        if (user.status !== "pending") {
+          return res.status(400).json({
+            error: "User sudah diproses",
+            current_status: user.status,
+          });
+        }
+
+        // ✅ UPDATE USER STATUS & ROLE
+        const updatedUser = await prisma.user.update({
+          where: { user_id: parseInt(user_id) },
+          data: {
+            status: "active",
+            role: approved_role,
+          },
+        });
+
+        console.log("✅ User approved:", updatedUser.username);
+        console.log("   Role assigned:", approved_role);
+
+        // ✨ KIRIM EMAIL APPROVAL (INI YANG DITAMBAHKAN!)
+        try {
+          const emailHTML = getApprovalEmailHTML(
+            updatedUser.username,
+            updatedUser.email,
+            approved_role
+          );
+
+          await emailTransporter.sendMail({
+            from: `"HRIS Management" <${process.env.EMAIL_USER}>`,
+            to: updatedUser.email,
+            subject: "🎉 Akun HRIS Anda Telah Disetujui!",
+            html: emailHTML,
+          });
+
+          console.log("📧 Approval email sent to:", updatedUser.email);
+        } catch (emailError) {
+          console.error("⚠️ Email sending failed:", emailError.message);
+          // Tetap return success meskipun email gagal
+        }
+
+        res.json({
+          message:
+            "✅ User berhasil diapprove dan email notifikasi telah dikirim",
+          user: {
+            username: updatedUser.username,
+            email: updatedUser.email,
+            role: updatedUser.role,
+            status: updatedUser.status,
+          },
+          approved_by: req.user.username,
+          notes: notes || "Approved",
+          email_sent: true,
+        });
+      } catch (error) {
+        console.error("❌ Error approving user:", error);
+        res.status(500).json({
+          error: "Gagal approve user",
+          details: error.message,
+        });
+      }
+    }
+  );
+
+  /**
+   * ✨ POST /api/alpha/users/reject/:user_id (UPDATED - DELETE USER)
+   * Reject pending user + HAPUS DARI DATABASE + KIRIM EMAIL
+   */
+  router.post(
+    "/users/reject/:user_id",
+    authMiddleware.authenticateToken,
+    authMiddleware.authorizeRole(["Admin"]),
+    async (req, res) => {
+      try {
+        const { user_id } = req.params;
+        const { reason } = req.body;
+
+        const user = await prisma.user.findUnique({
+          where: { user_id: parseInt(user_id) },
+          include: { employee: true }, // ✅ Include employee untuk hapus juga
+        });
+
+        if (!user || user.status !== "pending") {
+          return res.status(400).json({ error: "User tidak valid" });
+        }
+
+        // Simpan data untuk response (sebelum delete)
+        const userData = {
+          username: user.username,
+          email: user.email,
+        };
+
+        // 📧 KIRIM EMAIL REJECTION DULU (sebelum delete)
+        try {
+          const emailHTML = getRejectionEmailHTML(
+            user.username,
+            user.email,
+            reason || "Administrator tidak memberikan alasan spesifik."
+          );
+
+          await emailTransporter.sendMail({
+            from: `"HRIS Management" <${process.env.EMAIL_USER}>`,
+            to: user.email,
+            subject: "❌ Pendaftaran HRIS Anda Ditolak",
+            html: emailHTML,
+          });
+
+          console.log("📧 Rejection email sent to:", user.email);
+        } catch (emailError) {
+          console.error("⚠️ Email sending failed:", emailError.message);
+          // Lanjut delete meskipun email gagal
+        }
+
+        // ✅ HAPUS EMPLOYEE DULU (jika ada)
+        if (user.employee) {
+          await prisma.employee.delete({
+            where: { employee_id: user.employee.employee_id },
+          });
+          console.log("🗑️ Employee deleted:", user.employee.employee_id);
+        }
+
+        // ✅ HAPUS USER
+        await prisma.user.delete({
+          where: { user_id: parseInt(user_id) },
+        });
+
+        console.log("❌ User DELETED (rejected):", userData.username);
+        console.log("   Reason:", reason || "No reason provided");
+        console.log("   ✅ Username tersedia untuk registrasi ulang");
+
+        res.json({
+          message:
+            "User berhasil ditolak dan dihapus dari database. Email notifikasi telah dikirim.",
+          rejected_user: userData,
+          rejected_by: req.user.username,
+          reason: reason || "No reason provided",
+          email_sent: true,
+          deleted: true, // ✅ Indicate data was deleted
+        });
+      } catch (error) {
+        console.error("❌ Error rejecting user:", error);
+        res.status(500).json({
+          error: "Gagal reject user",
+          details: error.message,
+        });
+      }
+    }
+  );
 
   /**
    * ========================================
@@ -190,7 +748,7 @@ module.exports = function (prisma, alphaCheckService) {
 
         res.json({
           status: "Alpha check service is running",
-          cron_schedule: "Every day at 18:00 WIB",
+          cron_schedule: "Every day at 23:01 WIB",
           timezone: "Asia/Jakarta",
           today: {
             date: today,

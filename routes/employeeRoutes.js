@@ -374,5 +374,36 @@ module.exports = function (prisma) {
     }
   );
 
+  // =================================================================
+  // GET jumlah karyawan aktif (untuk billing)
+  // =================================================================
+  router.get(
+    "/active-count",
+    auth.authenticateToken,
+    auth.authorizeRole(["Admin", "HR"]),
+    async (req, res) => {
+      try {
+        const activeCount = await prisma.employee.count({
+          where: {
+            user: {
+              status: "active", // Hanya user dengan status active
+            },
+          },
+        });
+
+        res.json({
+          count: activeCount,
+          message: "Jumlah karyawan aktif berhasil diambil",
+        });
+      } catch (error) {
+        console.error("Error fetching active employee count:", error);
+        res.status(500).json({
+          error: "Gagal mengambil jumlah karyawan aktif",
+          details: error.message,
+        });
+      }
+    }
+  );
+
   return router;
 };

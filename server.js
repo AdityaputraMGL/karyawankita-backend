@@ -120,8 +120,14 @@ const passwordResetRoutes = require("./routes/passwordResetRoutes");
 const alphaRoutes = require("./routes/alphaRoutes");
 const googleAuthRoutes = require("./routes/googleAuthRoutes");
 const profileRoutes = require("./routes/profileRoutes");
+const scheduleRoutes = require("./routes/scheduleRoutes");
+const overtimeRoutes = require("./routes/overtimeRoutes");
+const subscriptionRoutes = require("./routes/subscriptionRoutes");
+const { checkSubscription } = require("./middleware/subscriptionMiddleware");
 
 // ✅ Use Routes
+app.use("/api/overtime", overtimeRoutes(prisma));
+app.use("/api/schedules", scheduleRoutes(prisma));
 app.use("/api/employees", employeeRoutes(prisma));
 app.use("/api/attendance", attendanceRoutes(prisma));
 app.use("/api/users", userRoutes(prisma));
@@ -133,6 +139,9 @@ app.use("/api/auth", passwordResetRoutes);
 app.use("/api/alpha", alphaRoutes(prisma, alphaCheckService));
 app.use("/api/auth", googleAuthRoutes(prisma, passport));
 app.use("/api", profileRoutes);
+app.use("/api/subscription", subscriptionRoutes(prisma));
+// ✅ TAMBAHKAN subscription middleware UNTUK SEMUA ROUTE SETELAH INI
+app.use(checkSubscription(prisma));
 
 // Error handling middleware
 app.use((err, req, res, next) => {

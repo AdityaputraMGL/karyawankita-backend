@@ -75,6 +75,50 @@ function authenticateToken(req, res, next) {
 
     // Attach user info to request object
     req.user = decoded;
+
+    // ✅ PINDAHKAN KE SINI: Block pending users (HARUS DI DALAM jwt.verify callback)
+    // ✅ BLOCK PENDING USERS (kecuali endpoint complete-profile)
+    if (decoded.status === "pending") {
+      // Izinkan akses HANYA ke endpoint complete-profile
+      if (req.originalUrl.includes("/complete-profile")) {
+        console.log(
+          "  ⚠️ Pending user accessing complete-profile endpoint - ALLOWED"
+        );
+        next();
+        return;
+      }
+
+      console.error("  ❌ User status: pending - Access denied");
+      return res.status(403).json({
+        error:
+          "Akun Anda masih menunggu approval dari Admin. Silakan tunggu atau hubungi administrator.",
+        status: "pending",
+        code: "ACCOUNT_PENDING",
+      });
+    }
+
+    // ✅ BLOCK REJECTED USERS
+    if (decoded.status === "rejected") {
+      console.error("  ❌ User status: rejected");
+      return res.status(403).json({
+        error:
+          "Akun Anda telah ditolak oleh Admin. Silakan hubungi administrator untuk informasi lebih lanjut.",
+        status: "rejected",
+        code: "ACCOUNT_REJECTED",
+      });
+    }
+
+    // ✅ ONLY ALLOW ACTIVE USERS
+    if (decoded.status !== "active") {
+      console.error("  ❌ User status:", decoded.status);
+      return res.status(403).json({
+        error: "Status akun Anda tidak valid. Silakan hubungi administrator.",
+        status: decoded.status,
+        code: "INVALID_STATUS",
+      });
+    }
+
+    console.log("  ✅ User status: active");
     next();
   });
 }

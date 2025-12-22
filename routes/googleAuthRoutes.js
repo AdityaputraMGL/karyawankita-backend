@@ -29,7 +29,7 @@ module.exports = function (prisma, passport) {
 
         console.log("✅ Google OAuth successful for:", user.username);
 
-        // ✅ CEK APAKAH DATA EMPLOYEE SUDAH LENGKAP
+        // ✅ CEK APAKAH DATA EMPLOYEE SUDAH LENGKAP DULU
         const employee = await prisma.employee.findUnique({
           where: { user_id: user.user_id },
         });
@@ -42,7 +42,10 @@ module.exports = function (prisma, passport) {
           !employee?.no_hp ||
           employee?.no_hp === "-";
 
-        // Generate JWT token
+        console.log("📋 User status:", user.status);
+        console.log("📋 Needs completion:", needsCompletion);
+
+        // Generate JWT token (diperlukan untuk semua skenario)
         const token = jwt.sign(
           {
             userId: user.user_id,
@@ -50,6 +53,7 @@ module.exports = function (prisma, passport) {
             role: user.role,
             employee_id: employee?.employee_id || null,
             nama_lengkap: employee?.nama_lengkap || user.username,
+            status: user.status,
           },
           JWT_SECRET,
           { expiresIn: "24h" }
@@ -57,14 +61,40 @@ module.exports = function (prisma, passport) {
 
         const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3000";
 
-        // ✅ REDIRECT KE FORM PELENGKAP JIKA DATA BELUM LENGKAP
+        // ✅ PRIORITAS 1: Jika data belum lengkap, langsung ke form (tidak peduli status)
         if (needsCompletion) {
-          console.log("⚠️ User needs to complete profile");
+          console.log(
+            "⚠️ User needs to complete profile - redirecting to form"
+          );
           return res.redirect(`${frontendUrl}/complete-profile?token=${token}`);
         }
 
-        // Redirect ke dashboard jika data sudah lengkap
-        console.log("✅ Profile complete, redirecting to dashboard");
+        // ✅ PRIORITAS 2: Jika data sudah lengkap, baru cek status
+
+        // BLOCK PENDING USERS
+        if (user.status === "pending") {
+          console.log(
+            "⚠️ Login blocked - Profile complete but status: pending"
+          );
+          return res.redirect(`${frontendUrl}/login?error=account_pending`);
+        }
+
+        // BLOCK REJECTED USERS
+        if (user.status === "rejected") {
+          console.log("⚠️ Login blocked - User status: rejected");
+          return res.redirect(`${frontendUrl}/login?error=account_rejected`);
+        }
+
+        // ONLY ALLOW ACTIVE USERS
+        if (user.status !== "active") {
+          console.log("⚠️ Login blocked - Invalid status:", user.status);
+          return res.redirect(`${frontendUrl}/login?error=invalid_status`);
+        }
+
+        // ✅ PRIORITAS 3: Status active + data lengkap = redirect ke dashboard
+        console.log(
+          "✅ Profile complete & status active - redirecting to dashboard"
+        );
         res.redirect(`${frontendUrl}/auth/callback?token=${token}`);
       } catch (error) {
         console.error("❌ Error in Google callback:", error);

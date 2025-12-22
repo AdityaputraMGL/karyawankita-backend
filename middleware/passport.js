@@ -32,9 +32,8 @@ module.exports = function (prisma) {
           // Buat user baru
           console.log("🆕 Creating new user from Google account");
 
-          // Generate username dari email
-          const username =
-            email.split("@")[0] + "_" + Math.floor(Math.random() * 1000);
+          // Generate username dari email (tanpa angka random)
+          const username = email.split("@")[0];
 
           // ✅ PERBAIKAN: SET PASSWORD KOSONG - USER AKAN SET DI COMPLETE PROFILE
           user = await prisma.user.create({

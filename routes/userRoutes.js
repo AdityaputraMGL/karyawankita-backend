@@ -120,7 +120,7 @@ module.exports = function (prisma) {
           ? 5000000.0
           : 5000000.0;
 
-      // Create user
+      // ✅ CREATE USER DENGAN STATUS "PENDING"
       const newUser = await prisma.user.create({
         data: {
           username,
@@ -128,10 +128,11 @@ module.exports = function (prisma) {
           email,
           role: role || "Karyawan",
           status_karyawan: finalStatusKaryawan,
+          status: "pending",
         },
       });
 
-      console.log("✅ User created:", {
+      console.log("✅ User created with PENDING status:", {
         user_id: newUser.user_id,
         username: newUser.username,
         role: newUser.role,
@@ -163,18 +164,6 @@ module.exports = function (prisma) {
         gaji_pokok: employee.gaji_pokok,
       });
 
-      // Generate token
-      const token = jwt.sign(
-        {
-          userId: newUser.user_id,
-          username: newUser.username,
-          role: newUser.role,
-          employee_id: employee.employee_id,
-        },
-        JWT_SECRET,
-        { expiresIn: "24h" }
-      );
-
       console.log("✅ Registration successful for:", username);
       console.log("  - User ID:", newUser.user_id);
       console.log("  - Employee ID:", employee.employee_id);
@@ -185,27 +174,18 @@ module.exports = function (prisma) {
 
       // ⭐ RESPONSE UPDATED - KIRIM EMPLOYEE DATA LENGKAP
       res.status(201).json({
-        message: "✅ Registrasi berhasil! Data karyawan telah tersimpan.",
-        token,
+        success: true,
+        message:
+          "✅ Registrasi berhasil! Akun Anda menunggu approval dari Admin.",
+        pendingApproval: true,
         user: {
-          user_id: newUser.user_id,
           username: newUser.username,
           email: newUser.email,
-          role: newUser.role,
-          employee_id: employee.employee_id,
-          nama_lengkap: employee.nama_lengkap,
-          status_karyawan: employee.status_karyawan,
+          status: "pending",
         },
-        employee: {
-          employee_id: employee.employee_id,
-          nama_lengkap: employee.nama_lengkap,
-          alamat: employee.alamat,
-          no_hp: employee.no_hp,
-          jabatan: employee.jabatan,
-          status_karyawan: employee.status_karyawan,
-          gaji_pokok: employee.gaji_pokok,
-          tanggal_masuk: employee.tanggal_masuk,
-        },
+        // ❌ TIDAK ADA token!
+        // ❌ TIDAK ADA employee_id!
+        // ❌ TIDAK ADA data lengkap employee!
       });
     } catch (error) {
       console.error("❌ Registration error:", error);
@@ -251,6 +231,41 @@ module.exports = function (prisma) {
         console.log("❌ User not found:", username);
         return res.status(401).json({
           error: "Username atau email tidak ditemukan.",
+        });
+      }
+
+      // ✅ CEK STATUS USER SEBELUM VERIFY PASSWORD
+      console.log("👤 User found:", user.username);
+      console.log("📋 User status:", user.status);
+
+      // BLOCK PENDING USERS
+      if (user.status === "pending") {
+        console.log("⚠️ Login blocked - User status: pending");
+        return res.status(403).json({
+          error: "Akun Anda masih menunggu approval dari Admin.",
+          status: "pending",
+          code: "ACCOUNT_PENDING",
+        });
+      }
+
+      // BLOCK REJECTED USERS
+      if (user.status === "rejected") {
+        console.log("⚠️ Login blocked - User status: rejected");
+        return res.status(403).json({
+          error:
+            "Akun Anda telah ditolak oleh Admin. Silakan hubungi administrator untuk informasi lebih lanjut.",
+          status: "rejected",
+          code: "ACCOUNT_REJECTED",
+        });
+      }
+
+      // ONLY ALLOW ACTIVE USERS
+      if (user.status !== "active") {
+        console.log("⚠️ Login blocked - Invalid status:", user.status);
+        return res.status(403).json({
+          error: "Status akun Anda tidak valid. Silakan hubungi administrator.",
+          status: user.status,
+          code: "INVALID_STATUS",
         });
       }
 
@@ -307,6 +322,7 @@ module.exports = function (prisma) {
           role: user.role,
           employee_id: employeeId,
           nama_lengkap: user.employee?.nama_lengkap || user.username,
+          status: user.status,
         },
         JWT_SECRET,
         { expiresIn: "24h" }

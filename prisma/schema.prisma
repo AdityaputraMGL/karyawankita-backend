@@ -30,6 +30,7 @@ model Employee {
   employee_id        Int            @id @default(autoincrement())
   user_id            Int?           @unique
   nama_lengkap       String         @db.VarChar(100)
+  jenis_kelamin      String?        @db.VarChar(20)
   alamat             String?        @db.Text
   no_hp              String?        @db.VarChar(20)
   jabatan            String?        @db.VarChar(50)

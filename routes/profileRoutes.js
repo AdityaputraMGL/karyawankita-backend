@@ -33,7 +33,8 @@ const authenticateToken = (req, res, next) => {
 // ✅ POST /api/complete-profile
 router.post("/complete-profile", authenticateToken, async (req, res) => {
   try {
-    const { jabatan, alamat, no_hp, status_karyawan, password } = req.body;
+    const { jabatan, alamat, no_hp, status_karyawan, jenis_kelamin, password } =
+      req.body;
 
     // ✅ FIX: Ambil userId dari token (support berbagai format)
     const userId = req.user.userId || req.user.user_id || req.user.id;
@@ -42,14 +43,20 @@ router.post("/complete-profile", authenticateToken, async (req, res) => {
     console.log("📝 Completing profile for:");
     console.log("   - User ID:", userId);
     console.log("   - Employee ID:", employeeId);
-    console.log("   - Data:", { jabatan, status_karyawan, no_hp, alamat });
+    console.log("   - Data:", {
+      jabatan,
+      status_karyawan,
+      jenis_kelamin,
+      no_hp,
+      alamat,
+    });
     console.log(
       "   - Password provided:",
       password ? "YES (will be set)" : "NO (Google login only)"
     );
 
     // Validasi input
-    if (!jabatan || !alamat || !no_hp || !status_karyawan) {
+    if (!jabatan || !alamat || !no_hp || !status_karyawan || !jenis_kelamin) {
       return res.status(400).json({
         error: "Semua field wajib diisi",
         missing: {
@@ -57,6 +64,7 @@ router.post("/complete-profile", authenticateToken, async (req, res) => {
           alamat: !alamat,
           no_hp: !no_hp,
           status_karyawan: !status_karyawan,
+          jenis_kelamin: !jenis_kelamin,
         },
       });
     }
@@ -75,6 +83,7 @@ router.post("/complete-profile", authenticateToken, async (req, res) => {
         alamat,
         no_hp,
         status_karyawan,
+        jenis_kelamin,
       },
     });
     console.log("✅ Employee data updated");

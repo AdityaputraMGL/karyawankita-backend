@@ -73,34 +73,27 @@ module.exports = function (prisma) {
   });
 
   // ⭐ POST: Membuat data performance baru (dengan role)
+  // POST: Membuat data performance baru
   router.post("/", async (req, res) => {
     const { employee_id, periode, nilai_kinerja, catatan } = req.body;
 
     try {
-      // ⭐ Ambil role dari tabel User berdasarkan employee_id
+      // Validasi employee ada
       const employee = await prisma.employee.findUnique({
         where: { employee_id: parseInt(employee_id) },
-        include: {
-          user: {
-            select: { role: true },
-          },
-        },
       });
 
       if (!employee) {
         return res.status(404).json({ error: "Karyawan tidak ditemukan." });
       }
 
-      const employeeRole = employee.user?.role || "Karyawan";
-
-      // ⭐ Simpan data performance dengan role
+      // Simpan data performance
       const newPerformance = await prisma.performance.create({
         data: {
           employee_id: parseInt(employee_id),
           periode,
           nilai_kinerja: parseInt(nilai_kinerja),
           catatan,
-          role: employeeRole, // ⭐ SIMPAN ROLE dari tabel User
         },
       });
 

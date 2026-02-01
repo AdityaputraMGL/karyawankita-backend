@@ -45,6 +45,7 @@ module.exports = function (prisma) {
       alamat, // ⭐ FIELD BARU
       no_hp, // ⭐ FIELD BARU
       jabatan, // ⭐ FIELD BARU
+      jenis_kelamin,
       confirmPassword,
     } = req.body;
 
@@ -144,6 +145,7 @@ module.exports = function (prisma) {
         data: {
           user_id: newUser.user_id,
           nama_lengkap: nama_lengkap.trim(), // ⭐ DARI FRONTEND, BUKAN USERNAME
+          jenis_kelamin: jenis_kelamin || null,
           alamat: alamat?.trim() || null, // ⭐ FIELD BARU
           no_hp: no_hp?.trim() || null, // ⭐ FIELD BARU
           jabatan: jabatan?.trim() || null, // ⭐ FIELD BARU
@@ -157,6 +159,7 @@ module.exports = function (prisma) {
         employee_id: employee.employee_id,
         user_id: employee.user_id,
         nama_lengkap: employee.nama_lengkap,
+        jenis_kelamin: employee.jenis_kelamin,
         alamat: employee.alamat, // ⭐ LOG ALAMAT
         no_hp: employee.no_hp, // ⭐ LOG NO HP
         jabatan: employee.jabatan, // ⭐ LOG JABATAN

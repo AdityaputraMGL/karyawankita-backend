@@ -32,7 +32,14 @@ module.exports = function (prisma) {
 
   router.put("/complete-profile", auth.authenticateToken, async (req, res) => {
     try {
-      const { jabatan, alamat, no_hp, status_karyawan, password } = req.body;
+      const {
+        jabatan,
+        alamat,
+        no_hp,
+        status_karyawan,
+        jenis_kelamin,
+        password,
+      } = req.body;
       const userId = req.user.userId;
 
       console.log("📝 Complete profile request for user:", userId);
@@ -74,6 +81,7 @@ module.exports = function (prisma) {
           alamat: alamat.trim(),
           no_hp: no_hp.trim(),
           status_karyawan: status_karyawan,
+          jenis_kelamin: jenis_kelamin?.trim() || null,
         },
         include: {
           user: true,
@@ -161,6 +169,7 @@ module.exports = function (prisma) {
     async (req, res) => {
       const {
         nama_lengkap,
+        jenis_kelamin,
         alamat,
         no_hp,
         jabatan,
@@ -195,6 +204,7 @@ module.exports = function (prisma) {
         // Prepare data
         const employeeData = {
           nama_lengkap: nama_lengkap.trim(),
+          jenis_kelamin: jenis_kelamin?.trim() || null,
           alamat: alamat?.trim() || null,
           no_hp: no_hp?.trim() || null,
           jabatan: jabatan?.trim() || null,
@@ -258,6 +268,7 @@ module.exports = function (prisma) {
       const id = parseInt(req.params.id);
       const {
         nama_lengkap,
+        jenis_kelamin,
         alamat,
         no_hp,
         jabatan,
@@ -286,6 +297,8 @@ module.exports = function (prisma) {
         const updateData = {};
         if (nama_lengkap !== undefined)
           updateData.nama_lengkap = nama_lengkap.trim();
+        if (jenis_kelamin !== undefined)
+          updateData.jenis_kelamin = jenis_kelamin?.trim() || null;
         if (alamat !== undefined) updateData.alamat = alamat?.trim() || null;
         if (no_hp !== undefined) updateData.no_hp = no_hp?.trim() || null;
         if (jabatan !== undefined) updateData.jabatan = jabatan?.trim() || null;

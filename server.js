@@ -70,7 +70,7 @@ app.use(
       secure: process.env.NODE_ENV === "production",
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     },
-  })
+  }),
 );
 app.use(passport.initialize());
 app.use(passport.session());
@@ -83,7 +83,7 @@ app.use((req, res, next) => {
   // Log headers untuk debugging (optional)
   if (req.headers.authorization) {
     console.log(
-      `  - Authorization: ${req.headers.authorization.substring(0, 30)}...`
+      `  - Authorization: ${req.headers.authorization.substring(0, 30)}...`,
     );
   }
 
@@ -173,7 +173,7 @@ const server = app.listen(PORT, () => {
   console.log(
     `🔐 JWT_SECRET: ${
       process.env.JWT_SECRET ? "✅ Configured" : "⚠️ Using default"
-    }`
+    }`,
   );
   console.log(`🌐 CORS enabled for: localhost:3000`);
   console.log(`⏰ Token expires in: ${process.env.JWT_EXPIRES_IN || "7d"}`);
@@ -217,3 +217,5 @@ process.on("uncaughtException", (error) => {
 process.on("unhandledRejection", (reason, promise) => {
   console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
 });
+
+module.exports = app;

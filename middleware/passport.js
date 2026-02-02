@@ -63,7 +63,7 @@ module.exports = function (prisma) {
           console.log("✅ New user created:", user.username);
           console.log("✅ Employee created:", employee.employee_id);
           console.log(
-            "⚠️  Password: NOT SET (empty) - user must set in Complete Profile"
+            "⚠️  Password: NOT SET (empty) - user must set in Complete Profile",
           );
 
           // Attach employee to user object
@@ -74,8 +74,8 @@ module.exports = function (prisma) {
           console.error("❌ Google OAuth error:", error);
           return done(error, null);
         }
-      }
-    )
+      },
+    ),
   );
 
   passport.serializeUser((user, done) => {

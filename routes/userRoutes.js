@@ -118,8 +118,8 @@ module.exports = function (prisma) {
         finalStatusKaryawan === "Magang"
           ? 5000000.0
           : finalStatusKaryawan === "Kontrak"
-          ? 5000000.0
-          : 5000000.0;
+            ? 5000000.0
+            : 5000000.0;
 
       // ✅ CREATE USER DENGAN STATUS "PENDING"
       const newUser = await prisma.user.create({
@@ -328,7 +328,7 @@ module.exports = function (prisma) {
           status: user.status,
         },
         JWT_SECRET,
-        { expiresIn: "24h" }
+        { expiresIn: "24h" },
       );
 
       console.log("  - Token generated successfully");
@@ -444,7 +444,7 @@ module.exports = function (prisma) {
         // Verify old password
         const isValidPassword = await bcrypt.compare(
           oldPassword,
-          user.password
+          user.password,
         );
 
         if (!isValidPassword) {
@@ -468,7 +468,7 @@ module.exports = function (prisma) {
         console.error("Error changing password:", error);
         res.status(500).json({ error: "Gagal mengubah password." });
       }
-    }
+    },
   );
 
   // ✅ POST: Forgot password (generate reset token)
